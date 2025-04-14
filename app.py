@@ -3,7 +3,15 @@ from database.crud import get_user, update_user_city
 from api.event_providers import get_events
 from api.maps import generate_map_link
 
+from sqlalchemy import create_engine
+print("SQLAlchemy работает!")
+
 app = Flask(__name__)
+
+from database.session import Base, engine
+
+# Создание таблиц
+Base.metadata.create_all(bind=engine)
 
 @app.route('/alice-webhook', methods=['POST'])
 def handle_alice():

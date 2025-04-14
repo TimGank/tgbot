@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
-from database.models import User, DialogState
+from database.session import SessionLocal
+from database.models import User
 
 def get_user(db: Session, user_id: str):
     return db.query(User).filter(User.id == user_id).first()
