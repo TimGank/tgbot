@@ -2,13 +2,12 @@ from flask import Flask, request, jsonify
 from database.crud import get_user, update_user_city
 from api.event_providers import get_events
 from api.maps import generate_map_link
-
+from database.session import Base, engine
 from sqlalchemy import create_engine
+from tg.bot import main
 print("SQLAlchemy работает!")
 
 app = Flask(__name__)
-
-from database.session import Base, engine
 
 # Создание таблиц
 Base.metadata.create_all(bind=engine)
@@ -42,4 +41,5 @@ def handle_alice():
         })
 
 if __name__ == '__main__':
+    main()
     app.run(port=5000)
