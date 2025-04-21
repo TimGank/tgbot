@@ -13,22 +13,6 @@ from database.session import Base, engine
 # Создание таблиц
 Base.metadata.create_all(bind=engine)
 
-
-
-
-@app.route('/api/events', methods=['POST'])
-def api_find_events():
-    data = request.json
-    events = get_events(city=data['city'], category=data['category'])
-    return jsonify(events)
-
-
-@app.route('/')  # Главная страница
-def home():
-    return "Сервер работает! 🚀"
-
-
-
 @app.route('/alice-webhook', methods=['POST'])
 def handle_alice():
     data = request.json
@@ -57,9 +41,5 @@ def handle_alice():
             }
         })
 
-    app = Flask(__name__)
-    app.config['DEBUG'] = True  # Добавьте эту строку
-
 if __name__ == '__main__':
     app.run(port=5000)
-    app.run(debug=True)
