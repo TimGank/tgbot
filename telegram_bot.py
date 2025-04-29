@@ -8,6 +8,7 @@ from telegram.ext import (
     ConversationHandler,
     CallbackContext
 )
+import pprint
 from api.kudago import fetch_kudago_events
 from config import TELEGRAM_TOKEN
 
@@ -94,6 +95,7 @@ async def show_events(update: Update, context: CallbackContext):
             category=category,
             page_size=5
         )
+        pprint.pprint(events)
 
         if not events:
             await update.message.reply_text("😔 Событий не найдено. Попробуйте другую категорию.")
@@ -104,7 +106,7 @@ async def show_events(update: Update, context: CallbackContext):
             description = f"🎤 *{event['title']}*\n\n"
 
             if 'place' in event and event['place']:
-                description += f"🏠 *Место:* {event['place']['name']}\n"
+                description += f"🏠 *Место:* {event['place']['id']}\n"
                 if 'address' in event['place']:
                     description += f"📍 *Адрес:* {event['place']['address']}\n"
 
@@ -120,15 +122,8 @@ async def show_events(update: Update, context: CallbackContext):
                 keyboard.append([InlineKeyboardButton("🌐 Подробнее", url=event['site_url'])])
 
             # Отправляем сообщение
-            if 'images' in event and event['images']:
-                await update.message.reply_photo(
-                    photo=event['images'][0]['image'],
-                    caption=description,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown"
-                )
-            else:
-                await update.message.reply_text(
+
+            await update.message.reply_text(
                     description,
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode="Markdown"
