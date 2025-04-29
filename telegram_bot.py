@@ -1,5 +1,6 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -9,6 +10,8 @@ from telegram.ext import (
     CallbackContext
 )
 import pprint
+
+from api.gpt4free.gpt import DialogGPT
 from api.kudago import fetch_kudago_events
 from config import TELEGRAM_TOKEN
 
@@ -18,7 +21,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
 # Состояния для ConversationHandler
 CITY, CATEGORY = range(2)
 
@@ -43,133 +45,177 @@ CITY_MAPPING = {
 }
 
 
-async def start(update: Update, context: CallbackContext):
-    """Обработчик команды /start"""
-    user = update.effective_user
-    await update.message.reply_text(
-        f"Привет, {user.first_name}! Я помогу найти интересные события.\n"
-        "Выберите город:",
-        reply_markup=ReplyKeyboardMarkup(
-            [[city] for city in CITY_MAPPING.keys()],
-            one_time_keyboard=True,
-            resize_keyboard=True
+class EventBot:
+    # Состояния для ConversationHandler
+    CITY, CATEGORY = range(2)
+
+    def __init__(self, token: str):
+        self.TELEGRAM_TOKEN = token
+        self.logger = self._setup_logging()
+
+        self.gptPrompt = None
+        # Конфигурация данных
+        self.CATEGORIES = {
+            "🎵 Концерты": "concert",
+            "🎭 Театры": "theater",
+            "🖼 Выставки": "exhibition",
+            "🎪 Фестивали": "festival",
+            "🎬 Кино": "cinema",
+            "🍹 Вечеринки": "party",
+            "👶 Детям": "kids"
+        }
+
+        self.CITY_MAPPING = {
+            "Москва": "msk",
+            "Санкт-Петербург": "spb",
+            "Новосибирск": "nsk",
+            "Екатеринбург": "ekb",
+            "Казань": "kzn"
+        }
+
+    @staticmethod
+    def _setup_logging():
+        logging.basicConfig(
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            level=logging.INFO
         )
-    )
-    return CITY
+        return logging.getLogger(__name__)
 
+    async def start(self, update: Update, context: CallbackContext):
+        """Обработчик команды /start"""
+        user = update.effective_user
 
-async def select_city(update: Update, context: CallbackContext):
-    """Обработчик выбора города"""
-    city = update.message.text
-    if city not in CITY_MAPPING:
-        await update.message.reply_text("Пожалуйста, выберите город из списка:")
-        return CITY
+        self.gptPrompt = DialogGPT(update.effective_chat.id)
 
-    context.user_data['city'] = city
-    await update.message.reply_text(
-        "Выберите категорию событий:",
-        reply_markup=ReplyKeyboardMarkup(
-            [[category] for category in CATEGORIES.keys()],
-            one_time_keyboard=True,
-            resize_keyboard=True
+        await update.message.reply_text(
+            f"Привет, {user.first_name}! Я помогу найти интересные события.\n"
+            "Выберите город:",
+            reply_markup=ReplyKeyboardMarkup(
+                [[city] for city in self.CITY_MAPPING.keys()],
+                one_time_keyboard=True,
+                resize_keyboard=True
+            )
         )
-    )
-    return CATEGORY
+        return self.CITY
 
+    async def select_city(self, update: Update, context: CallbackContext):
+        """Обработчик выбора города"""
+        city = update.message.text
+        if city not in self.CITY_MAPPING:
+            await update.message.reply_text("Пожалуйста, выберите город из списка:")
+            return self.CITY
 
-async def show_events(update: Update, context: CallbackContext):
-    """Показ событий по выбранной категории"""
-    category_name = update.message.text
-    if category_name not in CATEGORIES:
-        await update.message.reply_text("Пожалуйста, выберите категорию из списка:")
-        return CATEGORY
-
-    city = context.user_data.get('city')
-    category = CATEGORIES[category_name]
-
-    await update.message.reply_text(f"🔍 Ищу {category_name.lower()} в {city}...")
-
-    try:
-        events = fetch_kudago_events(
-            city=CITY_MAPPING[city],
-            category=category,
-            page_size=5
+        context.user_data['city'] = city
+        await update.message.reply_text(
+            "Выберите категорию событий:",
+            reply_markup=ReplyKeyboardMarkup(
+                [[category] for category in self.CATEGORIES.keys()],
+                one_time_keyboard=True,
+                resize_keyboard=True
+            )
         )
-        pprint.pprint(events)
+        return self.CATEGORY
 
-        if not events:
-            await update.message.reply_text("😔 Событий не найдено. Попробуйте другую категорию.")
-            return CATEGORY
+    async def show_events(self, update: Update, context: CallbackContext):
+        """Показ событий по выбранной категории"""
+        category_name = update.message.text
+        if category_name not in self.CATEGORIES:
+            await update.message.reply_text("Пожалуйста, выберите категорию из списка:")
+            return self.CATEGORY
 
-        for event in events:
-            # Формируем описание события
-            description = f"🎤 *{event['title']}*\n\n"
+        city = context.user_data.get('city')
+        category = self.CATEGORIES[category_name]
 
-            if 'place' in event and event['place']:
-                description += f"🏠 *Место:* {event['place']['id']}\n"
-                if 'address' in event['place']:
-                    description += f"📍 *Адрес:* {event['place']['address']}\n"
+        await update.message.reply_text(f"🔍 Ищу {category_name.lower()} в {city}...")
 
-            if 'dates' in event and event['dates']:
-                description += f"📅 *Дата:* {event['dates'][0]}\n"
+        try:
+            events = fetch_kudago_events(
+                city=self.CITY_MAPPING[city],
+                category=category,
+                page_size=5
+            )
 
-            if 'price' in event and event['price']:
-                description += f"💵 *Цена:* {event['price']}\n"
+            if not events:
+                await update.message.reply_text("😔 Событий не найдено. Попробуйте другую категорию.")
+                return self.CATEGORY
 
-            # Создаем кнопку "Подробнее"
-            keyboard = []
-            if 'site_url' in event:
-                keyboard.append([InlineKeyboardButton("🌐 Подробнее", url=event['site_url'])])
+            for event in events:
+                description = f"🎤 *{event['title']}*\n\n"
 
-            # Отправляем сообщение
+                if 'place' in event and event['place']:
+                    description += f"🏠 *Место:* {event['place']['id']}\n"
+                    if 'address' in event['place']:
+                        description += f"📍 *Адрес:* {event['place']['address']}\n"
 
-            await update.message.reply_text(
+                if 'dates' in event and event['dates']:
+                    description += f"📅 *Дата:* {event['dates'][0]}\n"
+
+                if 'price' in event and event['price']:
+                    description += f"💵 *Цена:* {event['price']}\n"
+
+                keyboard = []
+                if 'site_url' in event:
+                    keyboard.append([InlineKeyboardButton("🌐 Подробнее", url=event['site_url'])])
+
+                await update.message.reply_text(
                     description,
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode="Markdown"
                 )
 
-    except Exception as e:
-        logger.error(f"Error: {e}")
+        except Exception as e:
+            self.logger.error(f"Error: {e}")
+            await update.message.reply_text("⚠️ Произошла ошибка. Пожалуйста, попробуйте позже.")
+
+        return self.CATEGORY
+
+    async def cancel(self, update: Update, context: CallbackContext):
+        """Отмена диалога"""
+        await update.message.reply_text(
+            "Поиск отменён. Нажмите /start чтобы начать заново.",
+            reply_markup=ReplyKeyboardMarkup([["/start"]], resize_keyboard=True)
+        )
+        return ConversationHandler.END
+
+    async def error_handler(self, update: Update, context: CallbackContext):
+        """Обработчик ошибок"""
+        self.logger.error(f"Update {update} caused error {context.error}")
         await update.message.reply_text("⚠️ Произошла ошибка. Пожалуйста, попробуйте позже.")
 
-    return CATEGORY
+    async def gpt_talk(self, update: Update, context: CallbackContext):
+        """Обработчик GPT-диалога"""
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id,
+            action=ChatAction.TYPING
+        )
+        try:
+            answer = await self.gptPrompt.createDialog(update.message.text)
+            print(answer + "0")
+            await update.message.reply_text(answer)
+        except TypeError:
+            await self.error_handler()
 
+    def run(self):
+        """Запуск бота"""
+        application = ApplicationBuilder().token(self.TELEGRAM_TOKEN).build()
 
-async def cancel(update: Update, context: CallbackContext):
-    """Отмена диалога"""
-    await update.message.reply_text(
-        "Поиск отменён. Нажмите /start чтобы начать заново.",
-        reply_markup=ReplyKeyboardMarkup([["/start"]], resize_keyboard=True)
-    )
-    return ConversationHandler.END
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', self.start)],
+            states={
+                self.CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.select_city)],
+                self.CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.show_events)]
+            },
+            fallbacks=[CommandHandler('cancel', self.cancel)]
+        )
 
+        application.add_handler(conv_handler)
+        application.add_error_handler(self.error_handler)
+        application.add_handler(MessageHandler(filters.TEXT, self.gpt_talk))
 
-async def error_handler(update: Update, context: CallbackContext):
-    """Обработчик ошибок"""
-    logger.error(f"Update {update} caused error {context.error}")
-    await update.message.reply_text("⚠️ Произошла ошибка. Пожалуйста, попробуйте позже.")
-
-
-def main():
-    """Запуск бота"""
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, select_city)],
-            CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, show_events)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    )
-
-    application.add_handler(conv_handler)
-    application.add_error_handler(error_handler)
-
-    logger.info("Бот запущен")
-    application.run_polling()
+        self.logger.info("Бот запущен")
+        application.run_polling()
 
 
 if __name__ == '__main__':
-    main()
+    bot = EventBot(TELEGRAM_TOKEN)
+    bot.run()
