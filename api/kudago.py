@@ -3,13 +3,13 @@ from config import KUDAGO_API_URL
 
 
 def fetch_kudago_events(city: str, category: str = "concert", page_size: int = 5):
-    """Поиск событий через KudaGo API"""
     params = {
         "location": city,
         "categories": category,
         "page_size": page_size,
         "fields": "title,place,price,dates,images,site_url"
     }
+
 
     try:
         response = requests.get(f"{KUDAGO_API_URL}/events/", params=params)

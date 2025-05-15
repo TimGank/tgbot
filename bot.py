@@ -168,6 +168,8 @@ async def show_event(update: Update, context: CallbackContext):
     buttons = []
     if event.get('site_url'):
         buttons.append([InlineKeyboardButton("🎟️ Купить билет", url=event['site_url'])])
+
+    """Добавляется кнопка назад"""
     buttons.append(get_back_button())
 
     await query.edit_message_text(
